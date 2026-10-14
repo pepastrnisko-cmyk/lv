@@ -25,7 +25,7 @@ from typing import Callable
 from .runtime import Controller
 from .windows import StopHotkey, dictate_once, voice_available
 from .config import load_config, save_config
-from .logsetup import setup_logging
+from .logsetup import setup_logging, shutdown_logging
 from . import voice as voice_mod
 from .assistant import understand
 from .nlu import strip_wake_word
@@ -1162,6 +1162,7 @@ edits block further mutations to that project. No automatic replay occurs.
         if not self._closed_controller:
             self._closed_controller = True
             self.controller.close()
+            shutdown_logging()
 
     def close(self):
         if self._closing:
