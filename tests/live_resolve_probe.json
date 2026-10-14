@@ -1,0 +1,21 @@
+{
+  "test": "Resolve native integration",
+  "started_utc": "2026-10-13T15:33:49.757259+00:00",
+  "status": "unavailable",
+  "steps": [
+    {
+      "step": "exception",
+      "details": {}
+    },
+    {
+      "step": "finished",
+      "details": {}
+    }
+  ],
+  "existing_project_modified": false,
+  "preferences_changed": false,
+  "project_deleted": false,
+  "error": "No Resolve scripting connection. Open a project, or use Workspace > Scripts > Utility > Editing Copilot. Studio external access requires Local scripting in preferences.",
+  "code": "connection_unavailable",
+  "finished_utc": "2026-10-13T15:33:53.862574+00:00"
+}

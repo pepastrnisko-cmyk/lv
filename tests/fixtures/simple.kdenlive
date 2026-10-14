@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mlt LC_NUMERIC="C" producer="main_bin" version="7.30.0" root="">
+  <profile frame_rate_num="25" frame_rate_den="1" width="320" height="180" progressive="1" sample_aspect_num="1" sample_aspect_den="1" display_aspect_num="16" display_aspect_den="9" colorspace="709" description="Copilot test 25 fps" />
+  <producer id="red" in="0" out="99">
+    <property name="length">100</property>
+    <property name="eof">pause</property>
+    <property name="resource">#ff0000</property>
+    <property name="mlt_service">color</property>
+    <property name="kdenlive:clipname">Red test card</property>
+    <property name="kdenlive:id">4</property>
+    <property name="kdenlive:clip_type">2</property>
+    <property name="kdenlive:folderid">-1</property>
+  </producer>
+  <producer id="background" in="0" out="249">
+    <property name="length">2147483647</property>
+    <property name="eof">continue</property>
+    <property name="resource">black</property>
+    <property name="mlt_service">color</property>
+    <property name="kdenlive:playlistid">black_track</property>
+    <property name="set.test_audio">0</property>
+  </producer>
+  <playlist id="video_lane">
+    <!-- Repeated asset use must be identified by timeline instance. -->
+    <blank length="5" />
+    <entry producer="red" in="10" out="59"><property name="kdenlive:id">4</property></entry>
+    <blank length="10" />
+    <entry producer="red" in="0" out="24"><property name="kdenlive:id">4</property></entry>
+    <blank length="10" />
+  </playlist>
+  <playlist id="empty_lane" />
+  <tractor id="video_track" in="0" out="99">
+    <property name="kdenlive:track_name">Video 1</property>
+    <property name="kdenlive:trackheight">67</property>
+    <property name="kdenlive:timeline_active">1</property>
+    <property name="kdenlive:locked_track">0</property>
+    <track producer="video_lane" hide="audio" />
+    <track producer="empty_lane" hide="audio" />
+  </tractor>
+  <tractor id="{aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee}" in="0" out="99">
+    <property name="kdenlive:uuid">{aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee}</property>
+    <property name="kdenlive:id">3</property>
+    <property name="kdenlive:producer_type">17</property>
+    <property name="kdenlive:clipname">Test sequence</property>
+    <property name="kdenlive:duration">100</property>
+    <property name="kdenlive:maxduration">100</property>
+    <property name="kdenlive:sequenceproperties.hasVideo">1</property>
+    <property name="kdenlive:sequenceproperties.hasAudio">0</property>
+    <property name="kdenlive:sequenceproperties.tracksCount">1</property>
+    <property name="kdenlive:sequenceproperties.groups">[]</property>
+    <property name="kdenlive:sequenceproperties.guides">[]</property>
+    <property name="unknown:future_metadata">preserve this</property>
+    <track producer="background" />
+    <track producer="video_track" />
+    <transition id="composite">
+      <property name="a_track">0</property>
+      <property name="b_track">1</property>
+      <property name="mlt_service">qtblend</property>
+      <property name="always_active">1</property>
+      <property name="internal_added">237</property>
+    </transition>
+  </tractor>
+  <playlist id="main_bin">
+    <property name="xml_retain">1</property>
+    <property name="kdenlive:docproperties.version">1.1</property>
+    <property name="kdenlive:docproperties.kdenliveversion">26.08.0</property>
+    <property name="kdenlive:docproperties.documentid">1</property>
+    <property name="kdenlive:docproperties.profile">custom</property>
+    <property name="kdenlive:docproperties.guidesCategories">[{"index":0,"comment":"Default","color":"#ff0000"}]</property>
+    <entry producer="red" in="0" out="99" />
+    <entry producer="{aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee}" in="0" out="99" />
+  </playlist>
+  <tractor id="project" in="0" out="99">
+    <property name="kdenlive:projectTractor">1</property>
+    <track producer="{aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee}" in="0" out="99" />
+  </tractor>
+</mlt>
