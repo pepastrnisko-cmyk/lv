@@ -21,6 +21,8 @@ from fractions import Fraction
 from typing import Any
 import xml.etree.ElementTree as ET
 
+from . import kdenlive_ops
+
 MAX_PROJECT_BYTES = 32 * 1024 * 1024
 MAX_ELEMENTS = 200_000
 MAX_DEPTH = 128
@@ -364,9 +366,12 @@ class KdenliveProject:
                 if not item["timeline_in"] < frame < item["timeline_out_exclusive"]:
                     raise KdenliveError("Split frame must lie strictly inside the target clip.")
                 summary = f"Split {item['name']} at timeline frame {frame}; preserve duration."
+        elif operation in kdenlive_ops.EXTENDED_OPERATIONS:
+            params, summary = kdenlive_ops.plan(self, operation, params, KdenliveError)
         else:
-            raise KdenliveError(f"Unsupported operation: {operation}. Supported: {', '.join(SUPPORTED_OPERATIONS)}")
-        return {"schema_version": 1, "editor": "kdenlive", "operation": operation, "args": params,
+            raise KdenliveError(f"Unsupported operation: {operation}. Supported: {', '.join(SUPPORTED_OPERATIONS + kdenlive_ops.EXTENDED_OPERATIONS)}")
+        extra = {"requires_confirmation": True} if operation in kdenlive_ops.DESTRUCTIVE_OPERATIONS else {}
+        return {**extra, "schema_version": 1, "editor": "kdenlive", "operation": operation, "args": params,
                 "source_path": str(self.path), "source_sha256": self.source_hash, "summary": summary,
                 "verification": "saved-project structural readback; editor reopen/render must be checked separately"}
 
@@ -400,6 +405,8 @@ class KdenliveProject:
             guides.append({"pos": params["frame"], "comment": params["comment"], "type": params["category"], "duration": 0})
             guides.sort(key=lambda g: g["pos"])
             _setprop(seq, "kdenlive:sequenceproperties.guides", json.dumps(guides, ensure_ascii=False, indent=2))
+        elif operation in kdenlive_ops.EXTENDED_OPERATIONS:
+            kdenlive_ops.apply(self, root, elements, operation, params)
         else:
             item = self._instances[params["instance_id"]]
             playlist = elements[item["playlist_id"]]
@@ -446,6 +453,8 @@ class KdenliveProject:
                 actual = _json_array(_props(check.sequences[params["sequence_id"]]).get("kdenlive:sequenceproperties.guides", "[]"), "guides")
                 if not any(g.get("pos") == params["frame"] and g.get("comment") == params["comment"] and g.get("type") == params["category"] for g in actual):
                     raise KdenliveError("Guide readback verification failed.")
+            elif operation in kdenlive_ops.EXTENDED_OPERATIONS:
+                kdenlive_ops.verify(self, check, operation, params, KdenliveError)
             else:
                 before = self._instances[params["instance_id"]]
                 actual_entries = [r for r in check._instances.values() if r["playlist_id"] == before["playlist_id"] and r["sequence_id"] == before["sequence_id"]]
