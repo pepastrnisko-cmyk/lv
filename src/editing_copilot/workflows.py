@@ -136,6 +136,8 @@ PLAYBACK     play · pause · go to start/end · next/previous frame · set in p
 EDITING      cut / razor here · guide here · marker here · save · redo · delete clip (confirms)
 PROJECT EDIT add guide at 10 seconds named Intro · add marker at frame 250 named Hook colour red
              cut the selected clip at frame 300 · shorten the selected clip by 5
+KDENLIVE COPY add effect sepia to clip selected · lock / unlock / mute / unmute / hide / show track Video 1
+             move clip selected to frame 100 · delete clip selected (say “confirm”) · inspect project details · check media
 MOUSE        click Render · click the Edit tab · open File menu · double click Intro · right click Intro
              shift click Outro · click the second Interview · click at 640 480 · hover over Effects
 DRAG         drag Intro to Video 2 · drag Intro right 120 pixels · drag from 400 600 to 900 600

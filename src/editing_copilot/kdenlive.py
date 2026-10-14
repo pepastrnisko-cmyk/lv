@@ -251,7 +251,7 @@ class KdenliveProject:
                 "frame_rate": {"numerator": self.fps.numerator, "denominator": self.fps.denominator},
                 "fps": float(self.fps), "width": profile.get("width"), "height": profile.get("height"),
                 "assets": assets, "sequences": copy.deepcopy(self._sequence_description),
-                "supported_operations": list(SUPPORTED_OPERATIONS) if self.version == "1.1" and self.sequences else [],
+                "supported_operations": list(SUPPORTED_OPERATIONS + kdenlive_ops.EXTENDED_OPERATIONS) if self.version == "1.1" and self.sequences else [],
                 "limitations": ["Saved project only; unsaved editor changes are not visible.",
                                 "Trim/split require simple ungrouped effect-free clips.",
                                 "Output is a new project copy; reopen it in Kdenlive."]}

@@ -8,7 +8,6 @@ original project file is never written.
 """
 from __future__ import annotations
 
-import copy
 import xml.etree.ElementTree as ET
 
 EXTENDED_OPERATIONS = ("add_effect", "set_track", "move_clip", "delete_clip")
@@ -170,7 +169,10 @@ def plan(project, operation: str, params: dict, error) -> tuple[dict, str]:
         expected = {"instance_id", "frame"} if operation == "move_clip" else {"instance_id"}
         if set(params) != expected:
             raise error(f"{operation} requires exactly: {', '.join(sorted(expected))}.")
-        item = project._simple_instance(params["instance_id"])
+        try:
+            item = project._simple_instance(params["instance_id"])
+        except error as exc:  # shared safety rules; name the operation the user asked for
+            raise error(str(exc).replace("trim/split", operation.replace("_", " "))) from exc
         if operation == "delete_clip":
             return ({"instance_id": params["instance_id"]},
                     f"DELETE {item['name']} at frames [{item['timeline_in']}, {item['timeline_out_exclusive']}) and leave a gap "

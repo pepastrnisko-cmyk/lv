@@ -51,6 +51,20 @@ Wake word: **"copilot"** (configurable / can be disabled). Numbers can be spoken
 
 Edit commands are always previewed first; "apply" applies only that unchanged preview (disable with `"allow_voice_apply": false`). Ctrl+Shift+Space or Esc = Stop.
 
+## 3c. Kdenlive project-copy edits and checks
+
+These work on the saved `.kdenlive` file. Each one is previewed first, written to a **new copy** in `Copilot Copies`, read back and verified, and can be undone (the previous file is selected again). The original project is never changed.
+
+| Say or type | Effect |
+|---|---|
+| "add effect sepia to clip selected" | adds an allowlisted effect: greyscale, sepia, gaussian blur, box blur, brightness, mirror, invert |
+| "lock track Video 1" / "unlock …" · "mute track Audio 1" / "unmute …" · "hide track Video 1" / "show …" | track state (mute is for audio tracks, hide for video tracks) |
+| "move clip selected to frame 100" (or "move the selected clip to 4 seconds") | moves the clip on the same track into free space |
+| "delete clip selected" | removes the clip and leaves a gap (no ripple). By voice, "apply" is not enough: say **"confirm"** |
+| "inspect project details" · "check media" | read-only: tracks, clips and effects; missing media files and frame-rate mismatches (uses ffprobe when installed) |
+
+"add effect X" without "to clip …", and "delete clip" on its own, still use the on-screen workflows and shortcuts from 3a.
+
 ## 3a. Expert workflows (built on the click/type engine)
 
 | Kdenlive | Resolve |
