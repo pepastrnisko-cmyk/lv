@@ -16,6 +16,7 @@ import uuid
 from .commands import parse_command
 from .history import History, CancellationSupervisor
 from .editors import open_editor
+from .health import media_health, project_details
 from .kdenlive import KdenliveError, KdenliveProject  # noqa: F401  (KdenliveProject kept for callers/tests)
 
 
@@ -203,6 +204,19 @@ class Controller:
                 return {'operation': 'stop', 'summary': 'Further work stopped.'}
             if command.operation in ('inspect', 'list_clips', 'export_report'):
                 return {'operation': command.operation, 'snapshot': self.inspect(lease), 'summary': 'Read-only project inspection.'}
+            if command.operation in ('inspect_details', 'media_health'):
+                if self.editor != 'kdenlive':
+                    raise ValueError('Project details and media health are available for Kdenlive projects.')
+                snapshot = self.inspect(lease)
+                if command.operation == 'media_health':
+                    report = media_health(self.path)
+                    lease.assert_active()
+                    return {'operation': 'media_health', 'snapshot': snapshot, 'health': report, 'summary': report['summary']}
+                details = project_details(self.path)
+                lease.assert_active()
+                counts = details['summary']
+                return {'operation': 'inspect_details', 'snapshot': snapshot, 'details': details,
+                        'summary': f"Read-only project details: {counts['sequences']} sequence(s), {counts['tracks']} track(s), {counts['clips']} clip(s), {counts['effects']} effect(s)."}
             if command.operation == 'undo':
                 return {'operation': 'undo', 'summary': 'Undo the last verified assistant edit, after checking for later changes.'}
             self.inspect(lease)

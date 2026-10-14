@@ -101,6 +101,10 @@ def parse_command(text: str) -> Command:
         return Command(lowered, {})
     if lowered == "export report":
         return Command("export_report", {})
+    if lowered in ("inspect project details", "inspect details", "project details", "show project details"):
+        return Command("inspect_details", {})
+    if lowered in ("check media", "check media health", "media health", "media check", "check project media"):
+        return Command("media_health", {})
 
     match = re.fullmatch(r"add\s+(?P<kind>marker|guide)\s+at\s+frame\s+" + _NUMBER + r"\s+named\s+(?P<tail>.+)", text, re.IGNORECASE)
     if match:
@@ -122,4 +126,4 @@ def parse_command(text: str) -> Command:
 
     if re.search(r"\b(color|colour|grade|grading|dramatic|cinematic|brighter|exposure|match)\b", text, re.IGNORECASE):
         raise UnsupportedCommand("Creative color and shot matching are not implemented in this release. No change was made. Use an explicit supported timeline command.")
-    raise UnsupportedCommand('Unsupported or ambiguous command. Use: inspect; list clips; add marker at frame N named "Name"; add guide at frame N named "Name"; split clip ID at frame N; trim clip ID end by N frames; undo; stop.')
+    raise UnsupportedCommand('Unsupported or ambiguous command. Use: inspect; inspect project details; check media; list clips; add marker at frame N named "Name"; add guide at frame N named "Name"; split clip ID at frame N; trim clip ID end by N frames; undo; stop.')
