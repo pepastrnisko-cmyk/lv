@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+from datetime import datetime, timezone
 
 
 def _package_path():
@@ -41,12 +42,32 @@ def _read_history(path):
     return entries
 
 
+def _prune(entries, keep=500):
+    """Trim only finished records; never drop pending or applied ownership records."""
+    if len(entries) <= keep:
+        return entries
+    live = [e for e in entries if e.get("status") in ("pending", "applied")]
+    done = [e for e in entries if e.get("status") not in ("pending", "applied")]
+    return (done[-max(0, keep - len(live)):] + live) if len(live) < keep else live
+
+
+def _now():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _stamp(entry, **changes):
+    """Return entry with updated fields and a modification time (schema 1 stays readable)."""
+    entry.update(changes)
+    entry["updated_utc"] = _now()
+    return entry
+
+
 def _write_history(path, entries):
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix="resolve-history-", suffix=".tmp", dir=str(path.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump({"schema": 1, "transactions": entries[-500:]}, stream, ensure_ascii=False, indent=2)
+            json.dump({"schema": 1, "transactions": _prune(entries)}, stream, ensure_ascii=False, indent=2)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
@@ -57,7 +78,7 @@ def _write_history(path, entries):
 
 def main(context):
     _package_path()
-    from editing_copilot.resolve import ResolveAdapter, ResolveError
+    from editing_copilot.resolve import ResolveAdapter, ResolveError, is_pre_mutation
 
     editor = context.get("resolve")
     if editor is None:
@@ -93,6 +114,11 @@ def main(context):
                 ui.Label({"Text": "Name", "Weight": 0.15}),
                 ui.LineEdit({"ID": "Name", "Text": "Copilot marker", "Weight": 0.85})]),
             ui.HGroup({"Weight": 0}, [
+                ui.Label({"Text": "Color", "Weight": 0.15}),
+                ui.LineEdit({"ID": "Color", "Text": "Green", "Weight": 0.35}),
+                ui.Label({"Text": "Duration", "Weight": 0.15}),
+                ui.LineEdit({"ID": "Duration", "Text": "1", "Weight": 0.35})]),
+            ui.HGroup({"Weight": 0}, [
                 ui.Label({"Text": "Note", "Weight": 0.15}),
                 ui.LineEdit({"ID": "Note", "Text": "", "Weight": 0.85})]),
             ui.HGroup({"Weight": 0}, [
@@ -119,7 +145,13 @@ def main(context):
         frame_text = str(items["Frame"].Text).strip()
         if not frame_text.isdecimal():
             raise ValueError("Frame must be a nonnegative integer offset, for example 120.")
-        return {"frame": int(frame_text), "name": str(items["Name"].Text), "note": str(items["Note"].Text), "color": "Green", "duration": 1}
+        duration_text = str(items["Duration"].Text).strip()
+        if not (duration_text.isascii() and duration_text.isdecimal()) or int(duration_text) < 1:
+            raise ValueError("Duration must be a whole number of frames, at least 1.")
+        if not (frame_text.isascii()):
+            raise ValueError("Frame must use plain digits 0-9.")
+        return {"frame": int(frame_text), "name": str(items["Name"].Text), "note": str(items["Note"].Text),
+                "color": str(items["Color"].Text).strip(), "duration": int(duration_text)}
 
     def inspect(event=None):
         state["plan"] = None
@@ -159,16 +191,37 @@ def main(context):
             expected.pop("customData", None)
             if current.pop("frame") != plan["frame"] or current != expected:
                 raise RuntimeError("Marker fields changed after preview. Create a new preview.")
-            record = adapter._transaction(plan)
-            record["status"] = "pending"
+            record = _stamp(adapter._transaction(plan), status="pending", created_utc=_now())
             state["history"].append(record)
+            # Ownership must be durable BEFORE the host is touched. If this fails, nothing was changed.
             _write_history(history_file, state["history"])
-            transaction = adapter.apply(plan)
-            state["history"][-1] = transaction
-            _write_history(history_file, state["history"])
-            output("VERIFIED\n" + transaction["summary"] + "\nUse Undo my last marker to reverse this operation.")
+            try:
+                transaction = adapter.apply(plan)
+            except Exception as exc:
+                if is_pre_mutation(exc):
+                    _stamp(record, status="cancelled", error=getattr(exc, "code", "error"))
+                    note = "No change was made to your project."
+                else:
+                    note = ("The outcome is UNKNOWN. Inspect the timeline before another operation. "
+                            "The pending history record keeps ownership so Undo can still find the marker.")
+                try:
+                    _write_history(history_file, state["history"])
+                except Exception as write_exc:
+                    note += "\nHistory could not be updated: " + str(write_exc)
+                output(str(exc) + "\n" + note)
+                return
+            transaction["created_utc"] = record["created_utc"]
+            state["history"][-1] = _stamp(transaction)
+            try:
+                _write_history(history_file, state["history"])
+            except Exception as write_exc:
+                output("VERIFIED, but history could not be saved: " + str(write_exc) +
+                       "\nThe marker exists. Do not retry; inspect the timeline.")
+                return
+            extra = ("\n" + transaction["message"]) if transaction.get("message") else ""
+            output("VERIFIED\n" + transaction["summary"] + extra + "\nUse Undo my last marker to reverse this operation.")
         except Exception as exc:
-            output(str(exc) + "\nInspect the timeline before another operation. Pending history preserves ownership for recovery.")
+            output(str(exc) + "\nNo change was made to your project.")
 
     def undo(event=None):
         items["Apply"].Enabled = False
@@ -185,8 +238,12 @@ def main(context):
             if match is None:
                 raise RuntimeError("No assistant marker is recorded for this timeline.")
             result = adapter.undo(match)
-            match["status"] = "undone"
-            _write_history(history_file, state["history"])
+            _stamp(match, status="undone")
+            try:
+                _write_history(history_file, state["history"])
+            except Exception as write_exc:
+                output("VERIFIED UNDO, but history could not be saved: " + str(write_exc))
+                return
             output("VERIFIED UNDO\n" + json.dumps(result, ensure_ascii=False, indent=2))
         except Exception as exc:
             output(str(exc))

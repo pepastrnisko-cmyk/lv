@@ -23,6 +23,25 @@ COLORS = frozenset(("Blue", "Cyan", "Green", "Yellow", "Red", "Pink", "Purple",
 MAX_CLIPS = 20000
 
 
+# Error codes raised strictly before any host call that changes the project.
+# Anything not listed here (verification_failed, readback_failed, ...) leaves the
+# outcome unknown and must keep its history record pending.
+PRE_MUTATION_CODES = frozenset((
+    "invalid_argument", "invalid_plan", "out_of_range", "stale_plan", "marker_conflict",
+    "editor_busy", "state_unavailable", "identity_unavailable", "no_project", "no_timeline",
+    "cancelled", "unsupported_operation", "api_unavailable", "undo_conflict"))
+
+REQUIRED_PROJECT_API = ("GetName", "GetUniqueId", "GetCurrentTimeline", "IsRenderingInProgress")
+REQUIRED_TIMELINE_API = ("GetName", "GetUniqueId", "GetStartFrame", "GetEndFrame",
+                         "GetMarkers", "AddMarker", "DeleteMarkerAtFrame",
+                         "GetTrackCount", "GetItemListInTrack")
+
+
+def is_pre_mutation(error):
+    """True only when the error proves the project was not changed."""
+    return isinstance(error, ResolveError) and error.code in PRE_MUTATION_CODES
+
+
 class ResolveError(RuntimeError):
     def __init__(self, code, message, details=None):
         super().__init__(message)
@@ -96,6 +115,9 @@ def _integer(value, field):
 def _text(value, field, maximum, allow_empty=False):
     if not isinstance(value, str) or len(value) > maximum or "\x00" in value:
         raise ResolveError("invalid_argument", field + " must be text of at most " + str(maximum) + " characters without NUL.")
+    allowed = "\n\t" if field == "note" else ""
+    if any(ord(ch) < 32 and ch not in allowed for ch in value):
+        raise ResolveError("invalid_argument", field + " cannot contain control characters.")
     if not allow_empty and not value.strip():
         raise ResolveError("invalid_argument", field + " cannot be empty.")
     return value
@@ -169,16 +191,27 @@ class ResolveAdapter:
         timeline = project.GetCurrentTimeline()
         if timeline is None:
             raise ResolveError("no_timeline", "Open a timeline in the current project first.")
+        missing = [n for n in REQUIRED_PROJECT_API if not callable(getattr(project, n, None))]
+        missing += [n for n in REQUIRED_TIMELINE_API if not callable(getattr(timeline, n, None))]
+        if missing:
+            raise ResolveError("api_unavailable",
+                               "This Resolve build does not expose: " + ", ".join(missing) + ". Editing is disabled.",
+                               {"missing": missing})
         get_project_id = getattr(project, "GetUniqueId", None)
         get_timeline_id = getattr(timeline, "GetUniqueId", None)
         project_id = get_project_id() if callable(get_project_id) else None
         timeline_id = get_timeline_id() if callable(get_timeline_id) else None
-        identity = {"project_id": str(project_id) if project_id else None,
-                    "project_name": str(project.GetName()),
-                    "timeline_id": str(timeline_id) if timeline_id else None,
-                    "timeline_name": str(timeline.GetName()),
-                    "start_frame": int(timeline.GetStartFrame()),
-                    "end_frame": int(timeline.GetEndFrame())}
+        try:
+            identity = {"project_id": str(project_id) if project_id else None,
+                        "project_name": str(project.GetName()),
+                        "timeline_id": str(timeline_id) if timeline_id else None,
+                        "timeline_name": str(timeline.GetName()),
+                        "start_frame": int(timeline.GetStartFrame()),
+                        "end_frame": int(timeline.GetEndFrame())}
+        except (TypeError, ValueError) as exc:
+            raise ResolveError("readback_failed", "Resolve returned an unreadable project or timeline identity.") from exc
+        if identity["end_frame"] < identity["start_frame"]:
+            raise ResolveError("readback_failed", "Resolve returned an inverted timeline range.")
         return manager, project, timeline, identity
 
     @staticmethod
@@ -197,6 +230,39 @@ class ResolveAdapter:
         if state is not False:
             raise ResolveError("editor_busy", "Resolve is rendering or its render state is unavailable. Wait before editing.")
 
+    @staticmethod
+    def _describe_item(item, track_type, index):
+        get_id = getattr(item, "GetUniqueId", None)
+        get_properties = getattr(item, "GetProperties", None)
+        if not callable(get_properties):
+            get_properties = getattr(item, "GetProperty", None)
+        return {"id": str(get_id()) if callable(get_id) else None,
+                "name": str(item.GetName()), "track_type": track_type, "track": index,
+                "start_frame": _json_value(item.GetStart()), "end_frame": _json_value(item.GetEnd()),
+                "duration_frames": _json_value(item.GetDuration()),
+                "properties": _json_value(get_properties() or {}) if callable(get_properties) else {}}
+
+    def probe(self):
+        """Runtime capability probe (spec section 7): what this install actually exposes.
+
+        Never mutates. 'mutation_enabled' is the single gate the UI and agents must honour.
+        """
+        manager = self.resolve.GetProjectManager() if callable(getattr(self.resolve, "GetProjectManager", None)) else None
+        project = manager.GetCurrentProject() if manager is not None else None
+        timeline = project.GetCurrentTimeline() if project is not None else None
+        report = {"project_open": project is not None, "timeline_open": timeline is not None,
+                  "missing_project_api": [], "missing_timeline_api": [],
+                  "optional": {}, "mutation_enabled": False}
+        if project is not None:
+            report["missing_project_api"] = [n for n in REQUIRED_PROJECT_API if not callable(getattr(project, n, None))]
+        if timeline is not None:
+            report["missing_timeline_api"] = [n for n in REQUIRED_TIMELINE_API if not callable(getattr(timeline, n, None))]
+        report["optional"] = {"edition_reported": callable(getattr(self.resolve, "GetProductName", None)),
+                              "version_reported": callable(getattr(self.resolve, "GetVersionString", None))}
+        report["mutation_enabled"] = (report["project_open"] and report["timeline_open"] and
+                                      not report["missing_project_api"] and not report["missing_timeline_api"])
+        return report
+
     def describe(self):
         """Return a JSON-safe read-only snapshot of the active project/timeline."""
         _, project, timeline, identity = self._context()
@@ -211,18 +277,17 @@ class ResolveAdapter:
                 raise ResolveError("readback_failed", "Resolve returned an invalid track count.")
             for index in range(1, count + 1):
                 items = timeline.GetItemListInTrack(track_type, index) or []
+                if not isinstance(items, (list, tuple)):
+                    raise ResolveError("readback_failed", "Resolve returned an invalid item list for " + track_type + " track " + str(index) + ".")
                 for item in items:
                     if len(clips) >= MAX_CLIPS:
                         raise ResolveError("project_too_large", "This inspection is limited to 20,000 timeline items.")
-                    get_id = getattr(item, "GetUniqueId", None)
-                    get_properties = getattr(item, "GetProperties", None)
-                    if not callable(get_properties):
-                        get_properties = getattr(item, "GetProperty", None)
-                    clips.append({"id": str(get_id()) if callable(get_id) else None,
-                                  "name": str(item.GetName()), "track_type": track_type,
-                                  "track": index, "start_frame": item.GetStart(),
-                                  "end_frame": item.GetEnd(), "duration_frames": item.GetDuration(),
-                                  "properties": _json_value(get_properties() or {}) if callable(get_properties) else {}})
+                    try:
+                        clips.append(self._describe_item(item, track_type, index))
+                    except ResolveError:
+                        raise
+                    except Exception as exc:
+                        raise ResolveError("readback_failed", "Resolve could not describe an item on " + track_type + " track " + str(index) + ".") from exc
         get_version = getattr(self.resolve, "GetVersionString", None)
         get_product = getattr(self.resolve, "GetProductName", None)
         product = str(get_product()) if callable(get_product) else "DaVinci Resolve"
@@ -233,6 +298,7 @@ class ResolveAdapter:
                   "settings": _json_value(settings or {}), "clips": clips,
                   "markers": {str(k): v for k, v in _markers(timeline).items()},
                   "capabilities": ["inspect", "add_marker", "undo_owned_marker"],
+                  "capability_probe": self.probe(),
                   "frame_convention": "Marker frame is a zero-based offset from timeline start.",
                   "unsupported": ["color_matching", "grading", "ripple_edit", "export", "arbitrary_ui_control"]}
         return result
