@@ -142,6 +142,9 @@ def normalize(text: str, fps: float = 25.0) -> str:
     t = re.sub(r"^split\s+(the\s+)?(selected\s+clip|selection|this\s+clip|clip)\b", "split clip selected", t, flags=re.I)
     t = re.sub(r"^(shorten|trim)\s+(the\s+)?(selected\s+clip|selection|this\s+clip|clip)\s+(end\s+)?by\b", "trim clip selected end by", t, flags=re.I)
     t = re.sub(r"\bend by (\d+)$", r"end by \1 frames", t, flags=re.I)
+    t = re.sub(r"^move\s+(the\s+)?(selected\s+clip|selection|this\s+clip)\b", "move clip selected", t, flags=re.I)
+    t = re.sub(r"^(move clip \S+ to)\s+(\d+(?:\.\d+)?)\s*(seconds?|secs?)$", lambda m: f"{m.group(1)} frame {_frames(m.group(2), 'sec', fps)}", t, flags=re.I)
+    t = re.sub(r"^(move clip \S+ to)\s+(\d+)$", r"\1 frame \2", t, flags=re.I)
     t = re.sub(r"\bcolou?r\s+(\w+)$", lambda m: "color " + m.group(1).capitalize(), t, flags=re.I)
     return re.sub(r"\s+", " ", t).strip()
 
@@ -262,6 +265,15 @@ def interpret(utterance: str, fps: float = 25.0, editor: str = "kdenlive") -> In
     low = re.sub(r"^(please |copilot )+", "", low)
     if low in CONTROL:
         return Intent("control", CONTROL[low], raw)
+    # Explicit project-copy edits ("add effect X to clip selected", "move clip selected to frame N")
+    # would otherwise be taken by the on-screen effect workflow / drag parser below.
+    explicit = normalize(raw, fps)
+    if editor == "kdenlive" and re.fullmatch(r"(?:(?:add|apply) (?:the )?effect .+ to clip \S+|move clip \S+ to frame \d+)", explicit, re.I):
+        try:
+            parse_command(explicit)
+            return Intent("command", explicit, raw)
+        except UnsupportedCommand:
+            pass
     from .workflows import is_destructive, match as workflow_match
     flow = workflow_match(raw, editor)
     if flow is not None:

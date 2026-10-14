@@ -245,6 +245,27 @@ class Controller:
                             raise ValueError('Timeline instance not found; inspect and select its row.')
                         plan = adapter.plan('trim', {'instance_id': instance_id, 'source_in': item['source_in'],
                                                     'source_out_exclusive': item['source_out_exclusive'] + args['delta_frames']})
+                elif command.operation in ('add_effect', 'move_clip', 'delete_clip'):
+                    instance_id = args['clip_id']
+                    if instance_id.lower() == 'selected':
+                        if not selected_instance:
+                            raise ValueError('Select one timeline row in the companion first.')
+                        instance_id = selected_instance
+                    if command.operation == 'add_effect':
+                        plan = adapter.plan('add_effect', {'instance_id': instance_id, 'effect': args['effect']})
+                    elif command.operation == 'move_clip':
+                        plan = adapter.plan('move_clip', {'instance_id': instance_id, 'frame': args['frame']})
+                    else:
+                        plan = adapter.plan('delete_clip', {'instance_id': instance_id})
+                elif command.operation == 'set_track':
+                    wanted = args['track'].casefold()
+                    tracks = [t for sequence in self.snapshot['sequences'] for t in sequence['tracks']]
+                    matches = [t for t in tracks if t['id'].casefold() == wanted] or \
+                              [t for t in tracks if str(t.get('name', '')).casefold() == wanted]
+                    if len(matches) != 1:
+                        names = ', '.join(sorted({str(t.get('name', t['id'])) for t in tracks}))
+                        raise ValueError(('No track named ' if not matches else 'More than one track is named ') + repr(args['track']) + '. Tracks: ' + names + '.')
+                    plan = adapter.plan('set_track', {'track_id': matches[0]['id'], 'state': args['state']})
                 else:
                     raise ValueError('This operation is not available for Kdenlive.')
             else:

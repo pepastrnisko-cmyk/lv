@@ -124,6 +124,31 @@ def parse_command(text: str) -> Command:
     if match:
         return Command("trim_clip", {"clip_id": match.group("clip_id"), "edge": "end", "delta_frames": -_integer(match.group("amount"), positive=True), "ripple": False}, True)
 
+    match = re.fullmatch(r"(?:add|apply)\s+(?:the\s+)?effect\s+(?P<name>.+?)\s+to\s+clip\s+" + _CLIP, text, re.IGNORECASE)
+    if match:
+        effect = match.group("name").strip().strip('"').strip()
+        if not effect or len(effect) > 64 or any(ord(ch) < 32 for ch in effect):
+            raise UnsupportedCommand("Name one effect from the safe list.")
+        return Command("add_effect", {"effect": effect, "clip_id": match.group("clip_id")}, True)
+
+    match = re.fullmatch(r"(?P<state>mute|unmute|lock|unlock|hide|unhide|show)\s+track\s+(?P<track>.+)", text, re.IGNORECASE)
+    if match:
+        track = match.group("track").strip()
+        if len(track) >= 2 and track[0] == track[-1] == '"':
+            track = track[1:-1].strip()
+        if not track or len(track) > MAX_NAME_LENGTH or '"' in track:
+            raise UnsupportedCommand('Name the track, for example: lock track "Video 1".')
+        state = match.group("state").casefold()
+        return Command("set_track", {"state": "unhide" if state == "show" else state, "track": track})
+
+    match = re.fullmatch(r"move\s+clip\s+" + _CLIP + r"\s+to\s+frame\s+" + _NUMBER, text, re.IGNORECASE)
+    if match:
+        return Command("move_clip", {"clip_id": match.group("clip_id"), "frame": _integer(match.group("frame"))}, True)
+
+    match = re.fullmatch(r"(?:delete|remove)\s+clip\s+" + _CLIP, text, re.IGNORECASE)
+    if match:
+        return Command("delete_clip", {"clip_id": match.group("clip_id")}, True)
+
     if re.search(r"\b(color|colour|grade|grading|dramatic|cinematic|brighter|exposure|match)\b", text, re.IGNORECASE):
         raise UnsupportedCommand("Creative color and shot matching are not implemented in this release. No change was made. Use an explicit supported timeline command.")
-    raise UnsupportedCommand('Unsupported or ambiguous command. Use: inspect; inspect project details; check media; list clips; add marker at frame N named "Name"; add guide at frame N named "Name"; split clip ID at frame N; trim clip ID end by N frames; undo; stop.')
+    raise UnsupportedCommand('Unsupported or ambiguous command. Use: inspect; inspect project details; check media; list clips; add marker at frame N named "Name"; add guide at frame N named "Name"; split clip ID at frame N; trim clip ID end by N frames; add effect NAME to clip ID; lock/unlock/mute/unmute/hide/show track NAME; move clip ID to frame N; delete clip ID; undo; stop.')

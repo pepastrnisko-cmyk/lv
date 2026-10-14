@@ -1094,6 +1094,9 @@ edits block further mutations to that project. No automatic replay occurs.
                 self.status.set("Busy - say “stop” to interrupt.")
             elif action == "preview":
                 self.preview_command()
+            elif action == "apply" and ((self.controller.preview or {}).get("plan") or {}).get("requires_confirmation"):
+                self.status.set("This preview deletes a clip in a project copy. Say “confirm” (or click Apply preview) to proceed.")
+                self.speaker.say("Please confirm.", "confirm")
             elif action in ("apply", "confirm"):
                 if not self.config["voice"]["allow_voice_apply"]:
                     self.status.set("Voice Apply is disabled in config; click Apply preview.")
