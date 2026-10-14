@@ -78,7 +78,7 @@ def _write_history(path, entries):
 
 def main(context):
     _package_path()
-    from editing_copilot.resolve import ResolveAdapter, ResolveError, is_pre_mutation
+    from editing_copilot.resolve import ResolveAdapter, is_pre_mutation
 
     editor = context.get("resolve")
     if editor is None:
