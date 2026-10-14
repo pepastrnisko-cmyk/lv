@@ -11,6 +11,7 @@ import os
 import threading
 from typing import Any, Protocol, runtime_checkable
 
+from . import resolve as _resolve
 from .kdenlive import KdenliveProject
 from .resolve import ResolveAdapter
 
@@ -62,7 +63,8 @@ class ResolveEditor:
     operations = frozenset({"inspect", "add_marker"})
 
     def __init__(self, connect: Any = None, *, adapter: ResolveAdapter | None = None):
-        self.adapter = adapter if adapter is not None else ResolveAdapter(connect)
+        # Looked up at call time so tests and callers patching resolve.ResolveAdapter still apply.
+        self.adapter = adapter if adapter is not None else _resolve.ResolveAdapter(connect)
 
     def supports(self, operation: str) -> bool:
         return operation in self.operations

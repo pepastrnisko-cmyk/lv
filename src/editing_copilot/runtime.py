@@ -15,7 +15,8 @@ import uuid
 
 from .commands import parse_command
 from .history import History, CancellationSupervisor
-from .kdenlive import KdenliveError, KdenliveProject
+from .editors import open_editor
+from .kdenlive import KdenliveError, KdenliveProject  # noqa: F401  (KdenliveProject kept for callers/tests)
 
 
 def data_directory():
@@ -110,13 +111,13 @@ def resolve_rpc(operation, payload=None, cancel=None, timeout=15):
 
 
 def worker_main(request_path, response_path):
-    from .resolve import ResolveAdapter
+    from .editors import ResolveEditor
     request_path, response_path = Path(request_path), Path(response_path)
     if request_path.stat().st_size > 1024 * 1024:
         raise ValueError('Request too large.')
     try:
         request = json.loads(request_path.read_text(encoding='utf-8'))
-        adapter = ResolveAdapter()
+        adapter = ResolveEditor()
         op, payload = request.get('operation'), request.get('payload')
         if op == 'inspect':
             result = adapter.describe()
@@ -173,7 +174,7 @@ class Controller:
             if self.editor == 'kdenlive':
                 if self.path is None:
                     raise ValueError('Open a saved .kdenlive project first.')
-                result = KdenliveProject(self.path).describe()
+                result = open_editor('kdenlive', self.path).describe()
             else:
                 result = resolve_rpc('inspect', cancel=lease.event)
             lease.assert_active()
@@ -209,7 +210,7 @@ class Controller:
                 raise ValueError('This project has an unresolved previous edit. Inspect its recorded plan before further mutations. No automatic retry is allowed.')
             args = dict(command.args)
             if self.editor == 'kdenlive':
-                adapter = KdenliveProject(self.path)
+                adapter = open_editor('kdenlive', self.path)
                 if command.operation in ('add_guide', 'add_marker'):
                     if command.operation == 'add_marker' and re.search(r'\s+color\s+[^\s"]+\s*$', text, re.I):
                         raise ValueError('Kdenlive uses project guide categories. Use add guide; requested Resolve marker colors are unsupported here.')
@@ -276,10 +277,10 @@ class Controller:
                         output = folder / (self.path.stem + '-copilot-' + uuid.uuid4().hex[:10] + '.kdenlive')
                     output_path = Path(output).expanduser().resolve()
                     output_preexisting = output_path.exists()
-                    adapter = KdenliveProject(self.path)
+                    adapter = open_editor('kdenlive', self.path)
                     lease.assert_active()
                     dispatched = True
-                    result = adapter.apply(preview['plan'], output_path, lease.event)
+                    result = adapter.apply(preview['plan'], output=output_path, cancel=lease.event)
                     if not isinstance(result, dict) or result.get('status') != 'completed' or result.get('verification') != 'structural_readback_passed':
                         raise RuntimeError('Kdenlive did not return a verified completed project copy.')
                     if (Path(result.get('output', '')).resolve() != output_path
